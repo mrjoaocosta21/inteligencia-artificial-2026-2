@@ -1,0 +1,24 @@
+ATENÇÃO: limiares num__ neste arquivo são padronizados (z-score).
+No CSV de caminhos, os limiares numéricos estão nas unidades originais.
+|--- num__ca <= -0.223
+|   |--- cat__thal_7.0 <= 0.500
+|   |   |--- num__trestbps <= 1.399
+|   |   |   |--- weights: [75.000, 6.000] class: 0
+|   |   |--- num__trestbps >  1.399
+|   |   |   |--- weights: [2.000, 3.000] class: 1
+|   |--- cat__thal_7.0 >  0.500
+|   |   |--- cat__cp_4.0 <= 0.500
+|   |   |   |--- weights: [10.000, 2.000] class: 0
+|   |   |--- cat__cp_4.0 >  0.500
+|   |   |   |--- weights: [4.000, 15.000] class: 1
+|--- num__ca >  -0.223
+|   |--- cat__thal_3.0 <= 0.500
+|   |   |--- num__oldpeak <= -0.630
+|   |   |   |--- weights: [3.000, 6.000] class: 1
+|   |   |--- num__oldpeak >  -0.630
+|   |   |   |--- weights: [1.000, 47.000] class: 1
+|   |--- cat__thal_3.0 >  0.500
+|   |   |--- cat__cp_3.0 <= 0.500
+|   |   |   |--- weights: [6.000, 16.000] class: 1
+|   |   |--- cat__cp_3.0 >  0.500
+|   |   |   |--- weights: [10.000, 1.000] class: 0

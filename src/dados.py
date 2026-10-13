@@ -51,6 +51,9 @@ def carregar_dados(remover_ausentes: bool = True) -> pd.DataFrame:
     # na_values="?" faz o pandas tratar '?' como ausente (NaN);
     # sem isso, 'ca' e 'thal' virariam texto.
     df = pd.read_csv(ARQUIVO, header=None, names=COLUNAS, na_values="?")
+    # Identificador técnico: número da linha no arquivo, NÃO identidade do paciente.
+    # Preservado após filtros para auditar treino/teste e rastrear os erros.
+    df["paciente_id"] = df.index + 1
 
     if remover_ausentes:
         # Só 6 de 303 linhas têm ausentes (4 em 'ca', 2 em 'thal').

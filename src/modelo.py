@@ -6,7 +6,8 @@ Compara dois cenários, sempre avaliados no MESMO teste (intacto):
   B) Treino sem 85% dos idosos  -> o desequilíbrio do enunciado
 
 Métrica central: RECALL = dos pacientes que TÊM doença, quantos o modelo acertou.
-Em triagem, recall baixo significa doentes mandados para casa (falso negativo).
+Recall baixo significa mais doentes classificados como sem doença (falso negativo).
+A consequência clínica dependeria de como um hospital usasse a classificação.
 
 Como há só 8 idosos no treino B, um único sorteio é frágil. Por isso o script
 também repete tudo com várias sementes e mostra média e variação.
@@ -19,9 +20,11 @@ import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import recall_score
+from sklearn.metrics import confusion_matrix
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.tree import DecisionTreeClassifier
 
 from src.dados import carregar_dados
 from src.desequilibrio import remover_idosos
@@ -35,37 +38,90 @@ FEATURES = NUMERICAS + CATEGORICAS + BINARIAS
 
 SEMENTE_PRINCIPAL = 42
 N_REPETICOES = 50
+METRICAS_GRUPO = ("recall", "especif", "acc", "tn", "fp", "fn", "tp", "pos", "neg", "n")
+MODELOS = {"logistica": "Regressão logística", "arvore": "Árvore (profundidade 3)",
+           "knn": "KNN (5 vizinhos)"}
 
 
-def montar_modelo() -> Pipeline:
-    """Pré-processamento + Regressão Logística num só objeto."""
+def montar_modelo(incluir_idade: bool = True, tipo: str = "logistica",
+                  semente: int = SEMENTE_PRINCIPAL) -> Pipeline:
+    """Pré-processamento ajustado no treino e modelo com parâmetros fixos.
+
+    Árvore e KNN são comparações exploratórias; não substituem a referência.
+    Nenhum parâmetro é escolhido pelo desempenho ou pela queda no teste.
+    """
+    numericas = NUMERICAS if incluir_idade else [c for c in NUMERICAS if c != "age"]
     pre = ColumnTransformer([
-        ("num", StandardScaler(), NUMERICAS),
+        ("num", StandardScaler(), numericas),
         ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAS),
         ("bin", "passthrough", BINARIAS),
     ])
-    return Pipeline([("pre", pre), ("clf", LogisticRegression(max_iter=1000))])
+    if tipo == "logistica":
+        clf = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000)
+    elif tipo == "arvore":
+        # Árvore curta e folhas com pelo menos 5 casos: comparação interpretável.
+        clf = DecisionTreeClassifier(max_depth=3, min_samples_leaf=5, random_state=semente)
+    elif tipo == "knn":
+        clf = KNeighborsClassifier(n_neighbors=5)
+    else:
+        raise ValueError(f"Modelo desconhecido: {tipo}. Opções: {list(MODELOS)}")
+    return Pipeline([("pre", pre), ("clf", clf)])
+
+
+def avaliar_predicoes(teste: pd.DataFrame, pred) -> dict:
+    """Calcula os erros e seus denominadores; taxa sem denominador é NaN."""
+    pred = np.asarray(pred)
+    if pred.shape != (len(teste),):
+        raise ValueError("É necessária exatamente uma previsão por paciente do teste.")
+    if not np.isin(pred, [0, 1]).all() or not teste["target"].isin([0, 1]).all():
+        raise ValueError("Alvo e previsões devem ser binários (0 ou 1).")
+    positivos = teste["target"].to_numpy() == 1
+    res = {"recall_geral": float((pred[positivos] == 1).mean()) if positivos.any() else np.nan}
+    for nome, valor in [("idoso", 1), ("nao_idoso", 0)]:
+        mascara = teste["idoso"].to_numpy() == valor
+        y, p = teste.loc[mascara, "target"], pred[mascara]
+        if len(y):
+            tn, fp, fn, tp = (int(v) for v in confusion_matrix(y, p, labels=[0, 1]).ravel())
+        else:
+            tn, fp, fn, tp = 0, 0, 0, 0
+        pos, neg = tp + fn, tn + fp
+        metricas = {"tn": tn, "fp": fp, "fn": fn, "tp": tp, "pos": pos, "neg": neg,
+                    "n": pos + neg,
+                    "recall": tp / pos if pos else np.nan,
+                    "especif": tn / neg if neg else np.nan,
+                    "acc": (tn + tp) / (pos + neg) if pos + neg else np.nan}
+        res.update({f"{m}_{nome}": v for m, v in metricas.items()})
+    return res
+
+
+def metricas_por_grupo(res: dict) -> list[dict]:
+    """Linhas auditáveis para os CSVs dos experimentos."""
+    return [{"grupo": grupo, **{m: res[f"{m}_{grupo}"] for m in METRICAS_GRUPO}}
+            for grupo in ("idoso", "nao_idoso")]
 
 
 def treinar_e_avaliar(treino: pd.DataFrame, teste: pd.DataFrame,
-                      sample_weight=None) -> dict:
-    """Treina no `treino` e devolve métricas por grupo no `teste`."""
-    modelo = montar_modelo()
-    modelo.fit(treino[FEATURES], treino["target"], clf__sample_weight=sample_weight)
-    pred = modelo.predict(teste[FEATURES])
+                      sample_weight=None, incluir_idade: bool = True,
+                      tipo: str = "logistica", semente_modelo: int = SEMENTE_PRINCIPAL) -> dict:
+    """Treina sem usar o teste no ajuste; pesos atuam apenas no classificador.
 
-    res = {"recall_geral": recall_score(teste["target"], pred)}
-    for nome, valor in [("idoso", 1), ("nao_idoso", 0)]:
-        m = teste["idoso"] == valor
-        y, p = teste.loc[m, "target"], pred[m.to_numpy()]
-        res[f"recall_{nome}"] = recall_score(y, p)
-        res[f"fn_{nome}"] = int(((y == 1) & (p == 0)).sum())   # doentes não detectados
-        res[f"pos_{nome}"] = int((y == 1).sum())               # doentes existentes
-        tn = int(((y == 0) & (p == 0)).sum())
-        fp = int(((y == 0) & (p == 1)).sum())                  # saudáveis marcados como doentes
-        res[f"fp_{nome}"] = fp
-        res[f"especif_{nome}"] = tn / (tn + fp)                # saudáveis corretamente liberados
-        res[f"acc_{nome}"] = float((y == p).mean())
+    O StandardScaler continua sem pesos, como na implementação original.
+    `num`, `target`, `idoso` e `paciente_id` nunca entram como características.
+    """
+    if treino["target"].nunique() != 2:
+        raise ValueError("O treino precisa conter as duas classes do alvo.")
+    if sample_weight is not None and tipo == "knn":
+        raise ValueError("KNN não aceita reponderação por sample_weight.")
+    features = FEATURES if incluir_idade else [c for c in FEATURES if c != "age"]
+    modelo = montar_modelo(incluir_idade, tipo, semente_modelo)
+    kwargs = {"clf__sample_weight": sample_weight} if sample_weight is not None else {}
+    modelo.fit(treino[features], treino["target"], **kwargs)
+    pred = modelo.predict(teste[features])
+    res = avaliar_predicoes(teste, pred)
+    predicoes = teste[["paciente_id", "age", "idoso", "target"]].copy()
+    predicoes["predicao"] = pred
+    predicoes["prob_doenca"] = modelo.predict_proba(teste[features])[:, 1]
+    res["predicoes"] = predicoes
     res["modelo"] = modelo
     return res
 
@@ -120,3 +176,7 @@ if __name__ == "__main__":
     print(f"falsos positivos idosos A: {r.A_fp_idoso.mean():.2f}    B: {r.B_fp_idoso.mean():.2f}    "
           "(média por repetição)")
     print(f"acurácia idosos        A: {r.A_acc_idoso.mean():.3f}   B: {r.B_acc_idoso.mean():.3f}")
+    if r.B_idoso.mean() >= r.A_idoso.mean():
+        print("\nNesta configuração não há queda média do recall dos idosos. "
+              "O aumento de falsos positivos é um prejuízo diferente do pedido no pilar 3.")
+    print("Veja também: python -m src.diagnostico_idade e python -m src.investigacao.")

@@ -27,6 +27,9 @@ def remover_idosos(treino: pd.DataFrame, fracao: float = FRACAO_REMOVIDA,
                    semente: int = SEMENTE) -> pd.DataFrame:
     """Retorna uma cópia do treino com `fracao` dos idosos removida."""
 
+    if not 0 <= fracao <= 1:
+        raise ValueError("A fração removida deve estar entre 0 e 1.")
+
     idosos = treino[treino["idoso"] == 1]
     outros = treino[treino["idoso"] == 0]
 

@@ -2,7 +2,8 @@
 PASSO 3 - Separar treino e teste (ANTES de remover qualquer idoso)
 
 Por que a ordem importa:
-  - O TESTE precisa continuar representando a população real, com todos os idosos.
+  - O TESTE preserva as proporções da base original, sem remover idosos.
+    Isso não garante representatividade da população de um hospital real.
   - A remoção de 85% dos idosos vale SÓ para o TREINO (passo 4).
   Se removêssemos antes de dividir, o teste também perderia idosos e a
   avaliação deixaria de mostrar o prejuízo que o seminário quer demonstrar.

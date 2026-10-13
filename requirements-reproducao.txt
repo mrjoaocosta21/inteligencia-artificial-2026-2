@@ -1,0 +1,5 @@
+# Versões principais usadas em Python 3.13.14; transitivas resolvidas pelo pip.
+pandas==3.0.6
+numpy==2.5.1
+scikit-learn==1.9.1
+matplotlib==3.11.1

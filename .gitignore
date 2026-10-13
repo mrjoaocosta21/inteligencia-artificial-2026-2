@@ -7,3 +7,8 @@ __pycache__/
 # Editor / sistema
 .vscode/
 .DS_Store
+
+# Resultados detalhados por registro: permanecem locais e podem ser regenerados.
+resultados/predicoes_*.csv
+resultados/erros_pareados.csv
+resultados/arvore_casos_semente_42.csv
